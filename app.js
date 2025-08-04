@@ -39,25 +39,38 @@ btnProcesar.addEventListener('click', () => {
     // Convertir hoja a array de filas
     const allRows = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
-      raw: false,
+      raw:   false,
       defval: null
     });
+
+    // 1) Encontrar índice de fila de encabezados "Detalle" / "Debe" / "Haber" / "Saldo"
+    const headerIdx = allRows.findIndex(r =>
+      r[0] === 'Detalle' && r[2] === 'Debe' && r[3] === 'Haber' && r[4] === 'Saldo'
+    );
+    if (headerIdx < 0) {
+      alert('No se encontró la fila de encabezados. ¿El archivo está en el formato esperado?');
+      return;
+    }
+
+    // 2) Tomar sólo las filas de datos (las que siguen al encabezado)
+    const rows = allRows.slice(headerIdx + 1);
 
     // Preparar estructuras
     const dataMap  = {}; // { "codigo|desc": { "YYYY-MM": neto, ... } }
     const monthSet = new Set();
     let currentKey = null;
 
-    // Recorrer todas las filas
-    allRows.forEach(r => {
+    // 3) Recorrer sólo "rows" (datos)
+    rows.forEach(r => {
       const [colA, colB, colC, colD, colE] = r;
 
       // Detectar inicio de cuenta contable
-      const isHeader = colA && colB && colC === null && colD === null && colE === null;
+      const isHeader = colA !== null && colB !== null
+                     && colC === null && colD === null && colE === null;
       // Detectar fila de totales
-      const isTotal  = !colA && (colC !== null || colD !== null || colE !== null);
+      const isTotal  = colA === null && (colC !== null || colD !== null || colE !== null);
 
-      // Intentar parsear fecha DD/MM/YYYY
+      // Intentar parsear fecha en formato DD/MM/YYYY
       let fechaVal = null;
       if (typeof colA === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(colA)) {
         const [d, m, y] = colA.split('/');
@@ -65,7 +78,7 @@ btnProcesar.addEventListener('click', () => {
       }
 
       if (isHeader) {
-        // Nueva cuenta: código|descripción
+        // Nueva cuenta
         currentKey = `${colA}|${colB}`;
         if (!dataMap[currentKey]) {
           dataMap[currentKey] = {};
@@ -76,13 +89,14 @@ btnProcesar.addEventListener('click', () => {
         const yyyy     = fechaVal.getFullYear();
         const mm       = String(fechaVal.getMonth() + 1).padStart(2, '0');
         const monthKey = `${yyyy}-${mm}`;
+
+        // Añadir mes a set
         monthSet.add(monthKey);
 
-        // Inicializar si no existe
+        // Inicializar y acumular neto
         if (!dataMap[currentKey][monthKey]) {
           dataMap[currentKey][monthKey] = 0;
         }
-        // Convertir importes a número
         const debe  = colC !== null
           ? parseFloat(colC.toString().replace(/\./g, '').replace(',', '.'))
           : 0;
@@ -92,13 +106,13 @@ btnProcesar.addEventListener('click', () => {
 
         dataMap[currentKey][monthKey] += (debe - haber);
       }
-      // Totales y filas sin fecha se ignoran
+      // filas de totales o no fecha se ignoran
     });
 
-    // Crear array ordenado de meses
+    // 4) Ordenar los meses cronológicamente
     const meses = Array.from(monthSet).sort();
 
-    // Construir matriz de salida
+    // 5) Construir matriz de salida
     const output = [];
     output.push(['Código', 'Descripción', ...meses]);
     Object.entries(dataMap).forEach(([key, vals]) => {
@@ -110,11 +124,11 @@ btnProcesar.addEventListener('click', () => {
       output.push(row);
     });
 
-    // Generar y descargar el Excel
+    // 6) Generar y descargar el Excel
     const ws    = XLSX.utils.aoa_to_sheet(output);
     const newWb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(newWb, ws, 'SaldoMensual');
-    const wbout = XLSX.write(newWb, { bookType: 'xlsx', type: 'binary' });
+    const wbout = XLSX.write(newWb, { bookType:'xlsx', type:'binary' });
     downloadWorkbook(wbout, 'saldo_mensual.xlsx');
   };
 
