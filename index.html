@@ -1,30 +1,39 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Libro Mayor - Netos Mensuales</title>
-</head>
-<body>
-  <h1>Cargá tu archivo y obtené el neto mensual</h1>
-
-  <!-- Selector de archivo -->
-  <input type="file" id="input-file" accept=".xlsx" />
-
-  <!-- Controles opcionales de rango de meses -->
-  <div>
-    <label for="start-month">Desde:</label>
-    <input type="month" id="start-month" value="2024-04" min="2024-04" max="2025-03">
-    <label for="end-month">Hasta:</label>
-    <input type="month" id="end-month" value="2025-03" min="2024-04" max="2025-03">
-  </div>
-
-  <!-- Botón para procesar -->
-  <button id="procesar">Procesar y descargar</button>
-
-  <!-- Incluir SheetJS desde CDN -->
-  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-  <!-- Nuestro script de aplicación -->
-  <script src="app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Libro Mayor - Netos Mensuales</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="section_upload">
+      <div class="padding-global">
+          <div class="container-medium">
+            <div class="upload_component">
+              <h1>Cargá tu archivo y obtené el neto mensual</h1>
+        
+              <!-- Selector de archivo -->
+              <input type="file" id="input-file" accept=".xlsx" />
+              
+              <!-- Controles opcionales de rango de meses -->
+              <div>
+              <label for="start-month">Desde:</label>
+              <input type="month" id="start-month" value="2024-04" min="2024-04" max="2025-03">
+              <label for="end-month">Hasta:</label>
+              <input type="month" id="end-month" value="2025-03" min="2024-04" max="2025-03">
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Botón para procesar -->
+      <button id="procesar">Procesar y descargar</button>
+    </div>
+    
+    <!-- Incluir SheetJS desde CDN -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- Nuestro script de aplicación -->
+    <script src="app.js"></script>
+  </body>
 </html>
