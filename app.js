@@ -2,8 +2,6 @@
 
 // Referencias a elementos del DOM
 const inputFile   = document.getElementById('input-file');
-const startMonth  = document.getElementById('start-month');
-const endMonth    = document.getElementById('end-month');
 const btnProcesar = document.getElementById('procesar');
 
 // Función para descargar el workbook como .xlsx
@@ -53,22 +51,18 @@ btnProcesar.addEventListener('click', () => {
     // Tomar sólo las filas de datos (después de encabezados)
     const rows = headerIdx >= 0
       ? allRows.slice(headerIdx + 1)
-      : allRows.slice(6); // fallback
+      : allRows.slice(6);
+
+    // Construir el rango fijo de meses: Abril 2024 a Marzo 2025
+    const meses = [
+      '2024-04','2024-05','2024-06','2024-07','2024-08','2024-09',
+      '2024-10','2024-11','2024-12',
+      '2025-01','2025-02','2025-03'
+    ];
 
     // Preparar el mapa de acumulación
     const dataMap = {}; // { 'codigo|desc': { 'YYYY-MM': neto, ... } }
     let currentKey = null;
-
-    // Construir la lista de meses entre start y end
-    const meses = [];
-    let cursor = new Date(startMonth.value + '-01');
-    const endDate = new Date(endMonth.value + '-01');
-    while (cursor <= endDate) {
-      const y = cursor.getFullYear();
-      const m = String(cursor.getMonth() + 1).padStart(2,'0');
-      meses.push(`${y}-${m}`);
-      cursor.setMonth(cursor.getMonth() + 1);
-    }
 
     // Procesar cada fila
     rows.forEach(r => {
@@ -101,13 +95,13 @@ btnProcesar.addEventListener('click', () => {
         const monthKey = `${yyyy}-${mm}`;
 
         if (meses.includes(monthKey)) {
-          // Convertimos colC/D a número (si vienen como texto)
+          // Convertimos colC/D a número (maneja formato "1.234,56")
           const debe  = colC !== null ? parseFloat(colC.toString().replace(/\./g,'').replace(',', '.')) : 0;
           const haber = colD !== null ? parseFloat(colD.toString().replace(/\./g,'').replace(',', '.')) : 0;
           dataMap[currentKey][monthKey] += (debe - haber);
         }
       }
-      // totales y filas sin fecha quedan ignoradas
+      // Ignoramos totales y filas sin fecha
     });
 
     // Construir matriz de salida para SheetJS
