@@ -34,12 +34,12 @@ btnProcesar.addEventListener('click', () => {
 
   const reader = new FileReader();
   reader.onload = evt => {
-    const data    = evt.target.result;
-    const wb      = XLSX.read(data, { type: 'binary' });
-    const sheet   = wb.Sheets[wb.SheetNames[0]];
-    const rows    = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+    const data  = evt.target.result;
+    const wb    = XLSX.read(data, { type: 'binary' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows  = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
 
-    // Variables auxiliares
+    // Creamos un mapa para acumular netos
     const dataMap = {}; // { 'codigo|desc': { 'YYYY-MM': neto, … } }
     let currentKey = null;
 
@@ -57,27 +57,40 @@ btnProcesar.addEventListener('click', () => {
     // Procesar cada fila
     rows.forEach(r => {
       const [colA, colB, colC, colD, colE] = r;
+
+      // Detectar header de cuenta
       const isHeader = colA && colB && !colC && !colD && !colE;
+      // Detectar fila de totales
       const isTotal  = !colA && (colC || colD || colE);
-      const fecha    = Date.parse(colA);
+
+      // Intentar parsear fecha en formato DD/MM/YYYY
+      let fechaVal = null;
+      if (typeof colA === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(colA)) {
+        const [d, m, y] = colA.split('/');
+        fechaVal = new Date(+y, +m - 1, +d);
+      }
+
       if (isHeader) {
+        // Nueva cuenta
         currentKey = `${colA}|${colB}`;
         if (!dataMap[currentKey]) {
           dataMap[currentKey] = {};
           meses.forEach(m => dataMap[currentKey][m] = 0);
         }
-      } else if (!isTotal && !isNaN(fecha)) {
-        // Es una transacción
-        const date     = new Date(colA.split('/').reverse().join('-')); // DD/MM/YYYY
-        const yyyy     = date.getFullYear();
-        const mm       = String(date.getMonth() + 1).padStart(2, '0');
+      }
+      else if (!isTotal && fechaVal instanceof Date) {
+        // Es transacción válida dentro del rango
+        const yyyy     = fechaVal.getFullYear();
+        const mm       = String(fechaVal.getMonth() + 1).padStart(2, '0');
         const monthKey = `${yyyy}-${mm}`;
+
         if (meses.includes(monthKey)) {
           const debe  = parseFloat(colC) || 0;
           const haber = parseFloat(colD) || 0;
           dataMap[currentKey][monthKey] += (debe - haber);
         }
       }
+      // filas de totales o no fecha se ignoran
     });
 
     // Construir matriz para SheetJS
