@@ -6,7 +6,25 @@
   <title>Libro Mayor - Netos Mensuales</title>
 </head>
 <body>
-  <h1>Carga tu archivo y obtené el neto mensual</h1>
-  <!-- Aquí irá nuestro formulario y scripts -->
+  <h1>Cargá tu archivo y obtené el neto mensual</h1>
+
+  <!-- Selector de archivo -->
+  <input type="file" id="input-file" accept=".xlsx" />
+
+  <!-- Controles opcionales de rango de meses -->
+  <div>
+    <label for="start-month">Desde:</label>
+    <input type="month" id="start-month" value="2024-04" min="2024-04" max="2025-03">
+    <label for="end-month">Hasta:</label>
+    <input type="month" id="end-month" value="2025-03" min="2024-04" max="2025-03">
+  </div>
+
+  <!-- Botón para procesar -->
+  <button id="procesar">Procesar y descargar</button>
+
+  <!-- Incluir SheetJS desde CDN -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <!-- Nuestro script de aplicación -->
+  <script src="app.js"></script>
 </body>
 </html>
