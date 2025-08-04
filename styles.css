@@ -27,3 +27,12 @@ button {
 button:hover {
   background: #005fa3;
 }
+
+.padding-global {
+  padding: 0 5%;
+}
+
+.container-medium {
+  margin: 0 auto;
+  max-width: 960px;
+}
