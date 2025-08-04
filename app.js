@@ -1,16 +1,12 @@
 // app.js
 
-// Referencias a elementos del DOM
 const inputFile   = document.getElementById('input-file');
 const btnProcesar = document.getElementById('procesar');
 
-// Función para descargar el workbook como .xlsx
-function downloadWorkbook(binaryStr, filename) {
-  const buf  = new ArrayBuffer(binaryStr.length);
+function downloadWorkbook(bin, filename) {
+  const buf  = new ArrayBuffer(bin.length);
   const view = new Uint8Array(buf);
-  for (let i = 0; i < binaryStr.length; ++i) {
-    view[i] = binaryStr.charCodeAt(i) & 0xFF;
-  }
+  for (let i = 0; i < bin.length; ++i) view[i] = bin.charCodeAt(i) & 0xFF;
   const blob = new Blob([buf], { type: 'application/octet-stream' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
@@ -22,110 +18,85 @@ function downloadWorkbook(binaryStr, filename) {
   URL.revokeObjectURL(url);
 }
 
-// Al hacer clic en “Procesar y descargar”
 btnProcesar.addEventListener('click', () => {
   const file = inputFile.files[0];
-  if (!file) {
-    alert('Por favor, selecciona un archivo .xlsx primero.');
-    return;
-  }
+  if (!file) return alert('Selecciona primero un .xlsx');
 
   const reader = new FileReader();
-  reader.onload = evt => {
-    const data  = evt.target.result;
-    const wb    = XLSX.read(data, { type: 'binary' });
+  reader.onload = e => {
+    const data  = e.target.result;
+    const wb    = XLSX.read(data, { type: 'binary', cellDates: true, raw: false });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-
-    // Convertir hoja a array de filas
+    // Trae fechas como Date si cellDates:true
     const allRows = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      raw:   false,
-      defval: null
+      header: 1, defval: null, raw: false, cellDates: true
     });
 
-    // 1) Encontrar índice de fila de encabezados "Detalle" / "Debe" / "Haber" / "Saldo"
+    // Encontrar encabezado real para saltarlo
     const headerIdx = allRows.findIndex(r =>
       r[0] === 'Detalle' && r[2] === 'Debe' && r[3] === 'Haber' && r[4] === 'Saldo'
     );
-    if (headerIdx < 0) {
-      alert('No se encontró la fila de encabezados. ¿El archivo está en el formato esperado?');
-      return;
-    }
+    if (headerIdx < 0) return alert('Formato inesperado: no hallo fila Detalle/Debe/Haber/Saldo');
 
-    // 2) Tomar sólo las filas de datos (las que siguen al encabezado)
     const rows = allRows.slice(headerIdx + 1);
 
-    // Preparar estructuras
-    const dataMap  = {}; // { "codigo|desc": { "YYYY-MM": neto, ... } }
+    const dataMap  = {};
     const monthSet = new Set();
     let currentKey = null;
 
-    // 3) Recorrer sólo "rows" (datos)
     rows.forEach(r => {
       const [colA, colB, colC, colD, colE] = r;
 
-      // Detectar inicio de cuenta contable
-      const isHeader = colA !== null && colB !== null
-                     && colC === null && colD === null && colE === null;
-      // Detectar fila de totales
-      const isTotal  = colA === null && (colC !== null || colD !== null || colE !== null);
+      // Cabecera de cuenta: A y B llenos, C–E null
+      const isHeader = colA != null && colB != null
+                    && colC  === null && colD  === null && colE  === null;
+      // Totales: A null pero C/D/E con algo
+      const isTotal  = colA == null && (colC != null || colD != null || colE != null);
 
-      // Intentar parsear fecha en formato DD/MM/YYYY
+      // 3 tipos de fecha posibles
       let fechaVal = null;
-      if (typeof colA === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(colA)) {
+      if (colA instanceof Date) {
+        fechaVal = colA;
+      } else if (typeof colA === 'number') {
+        // Serial Excel → Date
+        const d = XLSX.SSF.parse_date_code(colA);
+        fechaVal = new Date(d.y, d.m - 1, d.d);
+      } else if (typeof colA === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(colA)) {
         const [d, m, y] = colA.split('/');
         fechaVal = new Date(+y, +m - 1, +d);
       }
 
       if (isHeader) {
-        // Nueva cuenta
         currentKey = `${colA}|${colB}`;
-        if (!dataMap[currentKey]) {
-          dataMap[currentKey] = {};
-        }
+        if (!dataMap[currentKey]) dataMap[currentKey] = {};
       }
       else if (!isTotal && fechaVal instanceof Date) {
-        // Transacción válida
-        const yyyy     = fechaVal.getFullYear();
-        const mm       = String(fechaVal.getMonth() + 1).padStart(2, '0');
-        const monthKey = `${yyyy}-${mm}`;
+        const y = fechaVal.getFullYear();
+        const m = String(fechaVal.getMonth() + 1).padStart(2, '0');
+        const key = `${y}-${m}`;
+        monthSet.add(key);
 
-        // Añadir mes a set
-        monthSet.add(monthKey);
-
-        // Inicializar y acumular neto
-        if (!dataMap[currentKey][monthKey]) {
-          dataMap[currentKey][monthKey] = 0;
-        }
-        const debe  = colC !== null
-          ? parseFloat(colC.toString().replace(/\./g, '').replace(',', '.'))
-          : 0;
-        const haber = colD !== null
-          ? parseFloat(colD.toString().replace(/\./g, '').replace(',', '.'))
-          : 0;
-
-        dataMap[currentKey][monthKey] += (debe - haber);
+        if (!dataMap[currentKey][key]) dataMap[currentKey][key] = 0;
+        const debe  = colC != null ? parseFloat(colC.toString().replace(/\./g,'').replace(',', '.')) : 0;
+        const haber = colD != null ? parseFloat(colD.toString().replace(/\./g,'').replace(',', '.')) : 0;
+        dataMap[currentKey][key] += (debe - haber);
       }
-      // filas de totales o no fecha se ignoran
     });
 
-    // 4) Ordenar los meses cronológicamente
+    // Armar lista de meses ordenada
     const meses = Array.from(monthSet).sort();
 
-    // 5) Construir matriz de salida
-    const output = [];
-    output.push(['Código', 'Descripción', ...meses]);
-    Object.entries(dataMap).forEach(([key, vals]) => {
-      const [codigo, desc] = key.split('|');
-      const row = [codigo, desc];
-      meses.forEach(m => {
-        row.push(vals[m] || 0);
-      });
-      output.push(row);
+    // Preparar matrix de salida
+    const out = [];
+    out.push(['Código','Descripción', ...meses]);
+    Object.entries(dataMap).forEach(([k, vals]) => {
+      const [cod, desc] = k.split('|');
+      const row = [cod, desc, ...meses.map(m => vals[m] || 0)];
+      out.push(row);
     });
 
-    // 6) Generar y descargar el Excel
-    const ws    = XLSX.utils.aoa_to_sheet(output);
+    // Exportar
+    const ws    = XLSX.utils.aoa_to_sheet(out);
     const newWb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(newWb, ws, 'SaldoMensual');
     const wbout = XLSX.write(newWb, { bookType:'xlsx', type:'binary' });
