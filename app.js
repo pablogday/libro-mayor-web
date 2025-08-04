@@ -24,7 +24,7 @@ function downloadWorkbook(binaryStr, filename) {
   URL.revokeObjectURL(url);
 }
 
-// Al hacer clic en “Procesar y descargar”
+// Evento al pulsar “Procesar y descargar”
 btnProcesar.addEventListener('click', () => {
   const file = inputFile.files[0];
   if (!file) {
@@ -34,22 +34,38 @@ btnProcesar.addEventListener('click', () => {
 
   const reader = new FileReader();
   reader.onload = evt => {
+    // Leemos el libro y la primera hoja
     const data  = evt.target.result;
-    const wb    = XLSX.read(data, { type: 'binary' });
+    const wb    = XLSX.read(data, { type:'binary' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows  = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
 
-    // Creamos un mapa para acumular netos
-    const dataMap = {}; // { 'codigo|desc': { 'YYYY-MM': neto, … } }
+    // Convertimos a un array de filas; defval:null para celdas en blanco
+    const allRows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      raw:   false,
+      defval: null
+    });
+
+    // Encontrar la fila de encabezados ("Detalle", "Descripcion", ...)
+    const headerIdx = allRows.findIndex(r =>
+      r[0] === 'Detalle' && r[1] === 'Descripcion'
+    );
+    // Tomar sólo las filas de datos (después de encabezados)
+    const rows = headerIdx >= 0
+      ? allRows.slice(headerIdx + 1)
+      : allRows.slice(6); // fallback
+
+    // Preparar el mapa de acumulación
+    const dataMap = {}; // { 'codigo|desc': { 'YYYY-MM': neto, ... } }
     let currentKey = null;
 
-    // Inicializar rango de meses
+    // Construir la lista de meses entre start y end
     const meses = [];
     let cursor = new Date(startMonth.value + '-01');
     const endDate = new Date(endMonth.value + '-01');
     while (cursor <= endDate) {
-      const y  = cursor.getFullYear();
-      const m  = String(cursor.getMonth() + 1).padStart(2, '0');
+      const y = cursor.getFullYear();
+      const m = String(cursor.getMonth() + 1).padStart(2,'0');
       meses.push(`${y}-${m}`);
       cursor.setMonth(cursor.getMonth() + 1);
     }
@@ -58,44 +74,45 @@ btnProcesar.addEventListener('click', () => {
     rows.forEach(r => {
       const [colA, colB, colC, colD, colE] = r;
 
-      // Detectar header de cuenta
-      const isHeader = colA && colB && !colC && !colD && !colE;
-      // Detectar fila de totales
-      const isTotal  = !colA && (colC || colD || colE);
+      // Detectar fila de cabecera de cuenta
+      const isHeader = colA && colB && colC === null && colD === null && colE === null;
+      // Detectar fila de totales (colA nulo, pero hay valores en C/D/E)
+      const isTotal  = !colA && (colC !== null || colD !== null || colE !== null);
 
-      // Intentar parsear fecha en formato DD/MM/YYYY
+      // Parsear fecha DD/MM/YYYY → Date
       let fechaVal = null;
       if (typeof colA === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(colA)) {
-        const [d, m, y] = colA.split('/');
+        const [d,m,y] = colA.split('/');
         fechaVal = new Date(+y, +m - 1, +d);
       }
 
       if (isHeader) {
-        // Nueva cuenta
+        // Iniciar nueva cuenta
         currentKey = `${colA}|${colB}`;
         if (!dataMap[currentKey]) {
           dataMap[currentKey] = {};
-          meses.forEach(m => dataMap[currentKey][m] = 0);
+          meses.forEach(mm => dataMap[currentKey][mm] = 0);
         }
       }
       else if (!isTotal && fechaVal instanceof Date) {
-        // Es transacción válida dentro del rango
+        // Es una transacción válida
         const yyyy     = fechaVal.getFullYear();
-        const mm       = String(fechaVal.getMonth() + 1).padStart(2, '0');
+        const mm       = String(fechaVal.getMonth() + 1).padStart(2,'0');
         const monthKey = `${yyyy}-${mm}`;
 
         if (meses.includes(monthKey)) {
-          const debe  = parseFloat(colC) || 0;
-          const haber = parseFloat(colD) || 0;
+          // Convertimos colC/D a número (si vienen como texto)
+          const debe  = colC !== null ? parseFloat(colC.toString().replace(/\./g,'').replace(',', '.')) : 0;
+          const haber = colD !== null ? parseFloat(colD.toString().replace(/\./g,'').replace(',', '.')) : 0;
           dataMap[currentKey][monthKey] += (debe - haber);
         }
       }
-      // filas de totales o no fecha se ignoran
+      // totales y filas sin fecha quedan ignoradas
     });
 
-    // Construir matriz para SheetJS
+    // Construir matriz de salida para SheetJS
     const output = [];
-    output.push(['Código', 'Descripción', ...meses]);
+    output.push(['Código','Descripción', ...meses]);
     Object.entries(dataMap).forEach(([key, vals]) => {
       const [codigo, desc] = key.split('|');
       const row = [codigo, desc, ...meses.map(m => vals[m])];
@@ -103,10 +120,10 @@ btnProcesar.addEventListener('click', () => {
     });
 
     // Generar y descargar el Excel
-    const ws   = XLSX.utils.aoa_to_sheet(output);
+    const ws    = XLSX.utils.aoa_to_sheet(output);
     const newWb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(newWb, ws, 'SaldoMensual');
-    const wbout = XLSX.write(newWb, { bookType: 'xlsx', type: 'binary' });
+    const wbout = XLSX.write(newWb, { bookType:'xlsx', type:'binary' });
     downloadWorkbook(wbout, 'saldo_mensual.xlsx');
   };
 
