@@ -22,7 +22,7 @@ function downloadWorkbook(binaryStr, filename) {
   URL.revokeObjectURL(url);
 }
 
-// Evento al pulsar “Procesar y descargar”
+// Al hacer clic en “Procesar y descargar”
 btnProcesar.addEventListener('click', () => {
   const file = inputFile.files[0];
   if (!file) {
@@ -32,84 +32,81 @@ btnProcesar.addEventListener('click', () => {
 
   const reader = new FileReader();
   reader.onload = evt => {
-    // Leemos el libro y la primera hoja
     const data  = evt.target.result;
-    const wb    = XLSX.read(data, { type:'binary' });
+    const wb    = XLSX.read(data, { type: 'binary' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
 
-    // Convertimos a un array de filas; defval:null para celdas en blanco
+    // Convertir hoja a array de filas
     const allRows = XLSX.utils.sheet_to_json(sheet, {
       header: 1,
-      raw:   false,
+      raw: false,
       defval: null
     });
 
-    // Encontrar la fila de encabezados ("Detalle", "Descripcion", ...)
-    const headerIdx = allRows.findIndex(r =>
-      r[0] === 'Detalle' && r[1] === 'Descripcion'
-    );
-    // Tomar sólo las filas de datos (después de encabezados)
-    const rows = headerIdx >= 0
-      ? allRows.slice(headerIdx + 1)
-      : allRows.slice(6);
-
-    // Construir el rango fijo de meses: Abril 2024 a Marzo 2025
-    const meses = [
-      '2024-04','2024-05','2024-06','2024-07','2024-08','2024-09',
-      '2024-10','2024-11','2024-12',
-      '2025-01','2025-02','2025-03'
-    ];
-
-    // Preparar el mapa de acumulación
-    const dataMap = {}; // { 'codigo|desc': { 'YYYY-MM': neto, ... } }
+    // Preparar estructuras
+    const dataMap  = {}; // { "codigo|desc": { "YYYY-MM": neto, ... } }
+    const monthSet = new Set();
     let currentKey = null;
 
-    // Procesar cada fila
-    rows.forEach(r => {
+    // Recorrer todas las filas
+    allRows.forEach(r => {
       const [colA, colB, colC, colD, colE] = r;
 
-      // Detectar fila de cabecera de cuenta
+      // Detectar inicio de cuenta contable
       const isHeader = colA && colB && colC === null && colD === null && colE === null;
-      // Detectar fila de totales (colA nulo, pero hay valores en C/D/E)
+      // Detectar fila de totales
       const isTotal  = !colA && (colC !== null || colD !== null || colE !== null);
 
-      // Parsear fecha DD/MM/YYYY → Date
+      // Intentar parsear fecha DD/MM/YYYY
       let fechaVal = null;
       if (typeof colA === 'string' && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(colA)) {
-        const [d,m,y] = colA.split('/');
+        const [d, m, y] = colA.split('/');
         fechaVal = new Date(+y, +m - 1, +d);
       }
 
       if (isHeader) {
-        // Iniciar nueva cuenta
+        // Nueva cuenta: código|descripción
         currentKey = `${colA}|${colB}`;
         if (!dataMap[currentKey]) {
           dataMap[currentKey] = {};
-          meses.forEach(mm => dataMap[currentKey][mm] = 0);
         }
       }
       else if (!isTotal && fechaVal instanceof Date) {
-        // Es una transacción válida
+        // Transacción válida
         const yyyy     = fechaVal.getFullYear();
-        const mm       = String(fechaVal.getMonth() + 1).padStart(2,'0');
+        const mm       = String(fechaVal.getMonth() + 1).padStart(2, '0');
         const monthKey = `${yyyy}-${mm}`;
+        monthSet.add(monthKey);
 
-        if (meses.includes(monthKey)) {
-          // Convertimos colC/D a número (maneja formato "1.234,56")
-          const debe  = colC !== null ? parseFloat(colC.toString().replace(/\./g,'').replace(',', '.')) : 0;
-          const haber = colD !== null ? parseFloat(colD.toString().replace(/\./g,'').replace(',', '.')) : 0;
-          dataMap[currentKey][monthKey] += (debe - haber);
+        // Inicializar si no existe
+        if (!dataMap[currentKey][monthKey]) {
+          dataMap[currentKey][monthKey] = 0;
         }
+        // Convertir importes a número
+        const debe  = colC !== null
+          ? parseFloat(colC.toString().replace(/\./g, '').replace(',', '.'))
+          : 0;
+        const haber = colD !== null
+          ? parseFloat(colD.toString().replace(/\./g, '').replace(',', '.'))
+          : 0;
+
+        dataMap[currentKey][monthKey] += (debe - haber);
       }
-      // Ignoramos totales y filas sin fecha
+      // Totales y filas sin fecha se ignoran
     });
 
-    // Construir matriz de salida para SheetJS
+    // Crear array ordenado de meses
+    const meses = Array.from(monthSet).sort();
+
+    // Construir matriz de salida
     const output = [];
-    output.push(['Código','Descripción', ...meses]);
+    output.push(['Código', 'Descripción', ...meses]);
     Object.entries(dataMap).forEach(([key, vals]) => {
       const [codigo, desc] = key.split('|');
-      const row = [codigo, desc, ...meses.map(m => vals[m])];
+      const row = [codigo, desc];
+      meses.forEach(m => {
+        row.push(vals[m] || 0);
+      });
       output.push(row);
     });
 
@@ -117,7 +114,7 @@ btnProcesar.addEventListener('click', () => {
     const ws    = XLSX.utils.aoa_to_sheet(output);
     const newWb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(newWb, ws, 'SaldoMensual');
-    const wbout = XLSX.write(newWb, { bookType:'xlsx', type:'binary' });
+    const wbout = XLSX.write(newWb, { bookType: 'xlsx', type: 'binary' });
     downloadWorkbook(wbout, 'saldo_mensual.xlsx');
   };
 
